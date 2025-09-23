@@ -3,19 +3,33 @@ import 'vertical_line_thumb_shape.dart';
 import 'separated_track_shape.dart';
 
 class SpeedControlCard extends StatefulWidget {
-  const SpeedControlCard({super.key});
+  final Function(double) onRpmChanged;
+  final double initialRpm;
+
+  const SpeedControlCard({
+    super.key,
+    required this.onRpmChanged,
+    required this.initialRpm,
+  });
 
   @override
   _SpeedControlCardState createState() => _SpeedControlCardState();
 }
 
 class _SpeedControlCardState extends State<SpeedControlCard> {
-  double _currentSpeed = 100;
+  late double _currentSpeed;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentSpeed = widget.initialRpm;
+  }
 
   void _incrementSpeed() {
     setState(() {
-      if (_currentSpeed < 200) {
+      if (_currentSpeed < 800) {
         _currentSpeed += 1;
+        widget.onRpmChanged(_currentSpeed);
       }
     });
   }
@@ -24,6 +38,7 @@ class _SpeedControlCardState extends State<SpeedControlCard> {
     setState(() {
       if (_currentSpeed > 0) {
         _currentSpeed -= 1;
+        widget.onRpmChanged(_currentSpeed);
       }
     });
   }
@@ -117,9 +132,12 @@ class _SpeedControlCardState extends State<SpeedControlCard> {
               child: Slider(
                 value: _currentSpeed,
                 min: 0,
-                max: 200,
+                max: 800,
                 onChanged: (value) {
-                  setState(() => _currentSpeed = value);
+                  setState(() {
+                    _currentSpeed = value;
+                    widget.onRpmChanged(_currentSpeed);
+                  });
                 },
               ),
             ),
