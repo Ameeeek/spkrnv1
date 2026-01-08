@@ -96,9 +96,9 @@ class _HomeScreenState extends State<HomeScreen> {
             viscosity = double.tryParse(data['soil']?.toString() ?? '0.0') ?? 0.0;
             fireStatus = int.tryParse(data['api']?.toString() ?? '0') ?? 0;
 
-            if (temperature > 30.0 && previousTemperature <= 30.0) {
+            if (temperature > 50.0 && previousTemperature <= 50.0) {
               _startTimer();
-            } else if (temperature <= 30.0 && previousTemperature > 30.0) {
+            } else if (temperature <= 50.0 && previousTemperature > 50.0) {
               _stopTimer();
             }
           });
@@ -295,7 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildNotificationStatus() {
-    final isTimerActive = temperature > 30.0;
+    final isTimerActive = temperature > 50.0;
     final isSystemNotificationActive = _notificationService.isNotificationActive;
     
     Color statusColor;
@@ -380,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
 Widget _buildFinishCookingButton() {
-  final isTimerActive = temperature > 30.0;
+  final isTimerActive = temperature > 50.0;
   final bool isEnabled = isTimerActive && !_isCookingFinished;
   
   return Container(
@@ -627,7 +627,7 @@ Widget _buildFinishCookingButton() {
 
   @override
   Widget build(BuildContext context) {
-    final isTimerActive = temperature > 30.0;
+    final isTimerActive = temperature > 50.0;
     
     return Padding(
       padding: const EdgeInsets.only(top: 24.0),
