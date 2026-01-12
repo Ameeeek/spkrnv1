@@ -1,21 +1,22 @@
 {
   "project_info": {
-    "project_number": "192750202235",
-    "project_id": "sipakarena",
-    "storage_bucket": "sipakarena.firebasestorage.app"
+    "project_number": "247873237172",
+    "firebase_url": "https://sipakarena-logic-default-rtdb.firebaseio.com",
+    "project_id": "sipakarena-logic",
+    "storage_bucket": "sipakarena-logic.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:192750202235:android:8b2a55e72586b0ce4ee1de",
+        "mobilesdk_app_id": "1:247873237172:android:576ee3afc0d6136f8ba7e1",
         "android_client_info": {
-          "package_name": "com.example.sipakarena"
+          "package_name": "com.company.sipakarenaFuzzy"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyA3dIkMm9iP5R5Erw39iOVya5L4nz7RyhE"
+          "current_key": "AIzaSyBx_NOj1zdT3EQQq9BiU2n3WEMsCZftVdY"
         }
       ],
       "services": {

@@ -20,7 +20,7 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Poppins',
         useMaterial3: true,
       ),
-      home: const SplashScreen(), // Langsung set home, jangan pakai initialRoute
+      home: const SplashScreen(), 
       debugShowCheckedModeBanner: false,
     );
   }

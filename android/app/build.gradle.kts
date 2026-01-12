@@ -5,7 +5,7 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 android {
-    namespace = "com.example.sipakarena"
+    namespace = "com.company.sipakarenaFuzzy"
     compileSdk = 34
     ndkVersion = "27.0.12077973"
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.sipakarena"
+        applicationId = "com.company.sipakarenaFuzzy"
         minSdk = 21
         targetSdk = 34
         versionCode = 1

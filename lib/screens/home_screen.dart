@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../widgets/info_card.dart';
 import 'dart:async';
 import '../widgets/action_card.dart';
+import 'dart:math';
 import '../widgets/speed_control_card.dart';
 import '../services/system_notification_service.dart';
 import 'production_history_screen.dart';
@@ -26,11 +27,174 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  void _showHistoryPopup(String actuatorName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFFFDF7EF), // Warna krem aren
+        title: Column(
+          children: [
+            Text(
+              "Histori $actuatorName",
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF7E4C27),
+              ),
+            ),
+            // const Text(
+            //   "Data Batch 1 (Indeks 0-20)",
+            //   style: TextStyle(fontFamily: 'Poppins', fontSize: 12, color: Colors.grey),
+            // ),
+            const Divider(color: Color(0xFFDC8542), thickness: 2),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 450,
+          child: historicalData.isEmpty
+              ? const Center(child: Text("Data tidak ditemukan"))
+              : ListView.builder(
+                  itemCount: historicalData.length > 21
+                      ? 21
+                      : historicalData.length,
+                  itemBuilder: (context, index) {
+                    final item = historicalData[index];
+                    final results = _getSingleFuzzyResult(
+                      double.tryParse(item['suhu'].toString()) ?? 0,
+                      double.tryParse(item['kadar_air'].toString()) ?? 0,
+                      double.tryParse(item['asap'].toString()) ?? 0,
+                    );
+
+                    int value = results[actuatorName]!.round();
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(15),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 5,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Row(
+                          children: [
+                            // Lingkaran Indeks
+                            // Container(
+                            //   width: 35,
+                            //   height: 35,
+                            //   decoration: const BoxDecoration(
+                            //     color: Color(0xFFDC8542),
+                            //     shape: BoxShape.circle,
+                            //   ),
+                            //   child: Center(
+                            //     child: Text(
+                            //       "$index",
+                            //       style: const TextStyle(
+                            //         color: Colors.white,
+                            //         fontWeight: FontWeight.bold,
+                            //       ),
+                            //     ),
+                            //   ),
+                            // ),
+                            // const SizedBox(width: 15),
+                            // Detail Data
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "$actuatorName: ${value.toStringAsFixed(1)}%",
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: _getActuatorColor(value),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "🌡️ ${item['suhu']}°C  |  💧 ${item['kadar_air']!.round()}%  |  💨 ${item['asap']}",
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Icon Status
+                            Icon(
+                              Icons.speed,
+                              color: _getActuatorColor(value).withOpacity(0.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              "Tutup",
+              style: TextStyle(
+                color: Color(0xFF7E4C27),
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Poppins',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Fungsi pembantu untuk menentukan warna berdasarkan nilai output
+  Color _getActuatorColor(int value) {
+    if (value <= 35) return Colors.blue; // Lambat
+    if (value <= 65) return Colors.orange; // Sedang
+    return Colors.redAccent; // Cepat
+  }
+  // --- FUZZY LOGIC ENGINE ---
+  // double _trimf(double x, double a, double b, double c) {
+  //   if (x <= a || x >= c) return 0.0;
+  //   if (x == b) return 1.0;
+  //   if (x > a && x < b) return (x - a) / (b - a);
+  //   return (c - x) / (c - b);
+  // }
+
+  // double _trapmf(double x, double a, double b, double c, double d) {
+  //   if (x <= a || x >= d) return 0.0;
+  //   if (x >= b && x <= c) return 1.0;
+  //   if (x > a && x < b) return (x - a) / (b - a);
+  //   return (d - x) / (d - c);
+  // }
+
+  // State untuk menyimpan hasil output fuzzy
   double temperature = 0.0;
   int smoke = 0;
   double viscosity = 0.0;
-  int fireStatus = 0;
+
+  // Variabel Hasil Fuzzy Real-time
+  int fuzzyBlower = 0;
+  int fuzzyPengaduk = 0;
+  int fuzzyExhaust = 0;
+
+  // Variabel Penyimpan Histori
+  List<Map<dynamic, dynamic>> historicalData = [];
   late DatabaseReference _sensorRef;
+  int fireStatus = 0;
+  // late DatabaseReference _sensorRef;
 
   bool isKayuTerbuka = false;
   bool isOliDituang = false;
@@ -41,7 +205,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   double currentRpm = 0.0;
 
-  final SystemNotificationService _notificationService = SystemNotificationService();
+  final SystemNotificationService _notificationService =
+      SystemNotificationService();
   StreamSubscription? _notificationSubscription;
 
   // State untuk tombol selesai memasak
@@ -62,7 +227,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _setupNotificationListener() {
-    _notificationSubscription = _notificationService.notificationStream.listen((data) {
+    _notificationSubscription = _notificationService.notificationStream.listen((
+      data,
+    ) {
       if (mounted) {
         setState(() {});
       }
@@ -77,38 +244,210 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // List<Map<dynamic, dynamic>> historicalData = []; // Simpan data histori di sini
+
   void _setupFirebaseListener() {
     _sensorRef = FirebaseDatabase.instanceFor(
       app: Firebase.app(),
-      databaseURL:
-          'https://sipakarena-default-rtdb.asia-southeast1.firebasedatabase.app',
-    ).ref('sensor');
+      databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+    ).ref('batch_1/data'); // Mengambil folder 'data'
 
-    _sensorRef.onValue.listen(
-      (DatabaseEvent event) {
-        final data = event.snapshot.value;
-        if (data is Map) {
-          setState(() {
-            final previousTemperature = temperature;
-            
-            temperature = double.tryParse(data['suhu']?.toString() ?? '0.0') ?? 0.0;
-            smoke = int.tryParse(data['asap']?.toString() ?? '0') ?? 0;
-            viscosity = double.tryParse(data['soil']?.toString() ?? '0.0') ?? 0.0;
-            fireStatus = int.tryParse(data['api']?.toString() ?? '0') ?? 0;
+    _sensorRef.onValue.listen((DatabaseEvent event) {
+      final data = event.snapshot.value;
 
-            if (temperature > 50.0 && previousTemperature <= 50.0) {
-              _startTimer();
-            } else if (temperature <= 50.0 && previousTemperature > 50.0) {
-              _stopTimer();
-            }
-          });
-        }
-      },
-      onError: (error) {
-        print('Error reading data: $error');
-      },
-    );
+      if (data is List) {
+        setState(() {
+          // 1. Simpan semua data untuk histori (0-20)
+          historicalData = data.whereType<Map<dynamic, dynamic>>().toList();
+
+          // 2. Update tampilan real-time menggunakan data indeks ke-20
+          if (data.length > 20) {
+            final data20 = data[20];
+            temperature =
+                double.tryParse(data20['suhu']?.toString() ?? '0.0') ?? 0.0;
+            viscosity =
+                double.tryParse(data20['kadar_air']?.toString() ?? '0.0') ??
+                0.0;
+            smoke = int.tryParse(data20['asap']?.toString() ?? '0') ?? 0;
+
+            // Hitung fuzzy untuk tampilan utama
+            _calculateFuzzyLogic(temperature, viscosity, smoke.toDouble());
+          }
+        });
+      }
+    });
   }
+  // --- FUNGSI LOGIKA FUZZY LENGKAP ---
+
+  // --- FUNGSI UTAMA UNTUK UPDATE UI ---
+  void _calculateFuzzyLogic(double s, double k, double a) {
+    final hasil = _getSingleFuzzyResult(s, k, a);
+    setState(() {
+      fuzzyBlower = hasil['Blower']!.round();
+      fuzzyPengaduk = hasil['Pengaduk']!.round();
+      fuzzyExhaust = hasil['Exhaust']!.round();
+    });
+    print("Realtime Fuzzy Update -> B: ${fuzzyBlower.toStringAsFixed(1)}%");
+  }
+
+  // --- FUNGSI MESIN FUZZY (DAPAT DIGUNAKAN HISTORI & REALTIME) ---
+  Map<String, double> _getSingleFuzzyResult(double s, double k, double a) {
+    // 1. FUZZIFIKASI
+    // Suhu (R, S, T)
+    Map<String, double> s_ = {
+      'R': _trapmf(s, 0, 0, 55, 70),
+      'S': _trimf(s, 60, 80, 100),
+      'T': _trapmf(s, 95, 110, 150, 150),
+    };
+    // Kadar Air (R, S, T)
+    Map<String, double> k_ = {
+      'R': _trapmf(k, 0, 0, 18, 30),
+      'S': _trapmf(k, 25, 40, 60, 75),
+      'T': _trapmf(k, 65, 80, 1000, 1000),
+    };
+    // Asap (Tipis, Sedang, Pekat)
+    Map<String, double> a_ = {
+      'T': _trapmf(a, 0, 0, 2, 4),
+      'S': _trimf(a, 3, 5, 7),
+      'P': _trapmf(a, 6, 8, 20, 20),
+    };
+
+    // Konstanta Output Sugeno
+    const double L = 20.0; // Lambat
+    const double M = 50.0; // Sedang
+    const double C = 80.0; // Cepat
+
+    List<double> w = []; // Bobot (Alpha Predikat)
+    List<double> zB = []; // Output Blower
+    List<double> zP = []; // Output Pengaduk
+    List<double> zE = []; // Output Exhaust
+
+    // Helper Rule
+    void addRule(double val, double blower, double pengaduk, double exhaust) {
+      if (val > 0) {
+        w.add(val);
+        zB.add(blower);
+        zP.add(pengaduk);
+        zE.add(exhaust);
+      }
+    }
+
+    // 2. INFERENCE (27 RULES)
+    // Suhu Rendah (R)
+    addRule(min(s_['R']!, min(k_['T']!, a_['T']!)), C, L, L); // R1
+    addRule(min(s_['R']!, min(k_['T']!, a_['S']!)), C, L, M); // R2
+    addRule(min(s_['R']!, min(k_['T']!, a_['P']!)), C, L, C); // R3
+    addRule(min(s_['R']!, min(k_['S']!, a_['T']!)), C, M, L); // R4
+    addRule(min(s_['R']!, min(k_['S']!, a_['S']!)), C, M, M); // R5
+    addRule(min(s_['R']!, min(k_['S']!, a_['P']!)), C, M, C); // R6
+    addRule(min(s_['R']!, min(k_['R']!, a_['T']!)), L, C, L); // R7
+    addRule(min(s_['R']!, min(k_['R']!, a_['S']!)), L, C, M); // R8
+    addRule(min(s_['R']!, min(k_['R']!, a_['P']!)), L, C, C); // R9
+
+    // Suhu Sedang (S)
+    addRule(min(s_['S']!, min(k_['T']!, a_['T']!)), M, L, L); // R10
+    addRule(min(s_['S']!, min(k_['T']!, a_['S']!)), M, L, M); // R11
+    addRule(min(s_['S']!, min(k_['T']!, a_['P']!)), M, L, C); // R12
+    addRule(min(s_['S']!, min(k_['S']!, a_['T']!)), M, M, L); // R13
+    addRule(min(s_['S']!, min(k_['S']!, a_['S']!)), M, M, M); // R14
+    addRule(min(s_['S']!, min(k_['S']!, a_['P']!)), M, M, C); // R15
+    addRule(min(s_['S']!, min(k_['R']!, a_['T']!)), M, C, L); // R16
+    addRule(min(s_['S']!, min(k_['R']!, a_['S']!)), M, C, M); // R17
+    addRule(min(s_['S']!, min(k_['R']!, a_['P']!)), M, C, C); // R18
+
+    // Suhu Tinggi (T)
+    addRule(min(s_['T']!, min(k_['T']!, a_['T']!)), L, L, L); // R19
+    addRule(min(s_['T']!, min(k_['T']!, a_['S']!)), L, L, M); // R20
+    addRule(min(s_['T']!, min(k_['T']!, a_['P']!)), L, L, C); // R21
+    addRule(min(s_['T']!, min(k_['S']!, a_['T']!)), L, M, L); // R22
+    addRule(min(s_['T']!, min(k_['S']!, a_['S']!)), L, M, M); // R23
+    addRule(min(s_['T']!, min(k_['S']!, a_['P']!)), L, M, C); // R24
+    addRule(min(s_['T']!, min(k_['R']!, a_['T']!)), L, C, L); // R25
+    addRule(min(s_['T']!, min(k_['R']!, a_['S']!)), L, C, M); // R26
+    addRule(min(s_['T']!, min(k_['R']!, a_['P']!)), L, C, C); // R27
+
+    // 3. DEFUZZIFIKASI (Weighted Average)
+    double totalW = w.fold(0, (sum, item) => sum + item);
+    if (totalW > 0) {
+      double sumB = 0;
+      double sumP = 0;
+      double sumE = 0;
+      for (int i = 0; i < w.length; i++) {
+        sumB += w[i] * zB[i];
+        sumP += w[i] * zP[i];
+        sumE += w[i] * zE[i];
+      }
+      return {
+        'Blower': sumB / totalW,
+        'Pengaduk': sumP / totalW,
+        'Exhaust': sumE / totalW,
+      };
+    }
+    return {'Blower': 0, 'Pengaduk': 0, 'Exhaust': 0};
+  }
+
+  // --- FUNGSI MEMBERSHIP ---
+  double _trimf(double x, double a, double b, double c) {
+    if (x <= a || x >= c) return 0.0;
+    if (x == b) return 1.0;
+    return (x < b) ? (x - a) / (b - a) : (c - x) / (c - b);
+  }
+
+  double _trapmf(double x, double a, double b, double c, double d) {
+    if (x <= a || x >= d) return 0.0;
+    if (x >= b && x <= c) return 1.0;
+    return (x < b) ? (x - a) / (b - a) : (d - x) / (d - c);
+  }
+
+  // --- FUNGSI MATEMATIKA FUZZY (SUPPORT FUNCTIONS) ---
+
+  // double _trimf(double x, double a, double b, double c) {
+  //   if (x <= a || x >= c) return 0.0;
+  //   if (x == b) return 1.0;
+  //   if (x > a && x < b) return (x - a) / (b - a);
+  //   return (c - x) / (c - b);
+  // }
+
+  // double _trapmf(double x, double a, double b, double c, double d) {
+  //   if (x <= a || x >= d) return 0.0;
+  //   if (x >= b && x <= c) return 1.0;
+  //   if (x > a && x < b) return (x - a) / (b - a);
+  //   return (d - x) / (d - c);
+  // }
+  // void _setupFirebaseListener() {
+  //   _sensorRef = FirebaseDatabase.instanceFor(
+  //     app: Firebase.app(),
+  //     databaseURL:
+  //         'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+  //   ).ref('batch_1/data/0');
+
+  //   _sensorRef.onValue.listen(
+  //     (DatabaseEvent event) {
+  //       final data = event.snapshot.value;
+  //       if (data is Map) {
+  //         setState(() {
+  //           final previousTemperature = temperature;
+
+  //           temperature =
+  //               double.tryParse(data['suhu']?.toString() ?? '0.0') ?? 0.0;
+  //           smoke = int.tryParse(data['asap']?.toString() ?? '0') ?? 0;
+  //           viscosity =
+  //               double.tryParse(data['soil']?.toString() ?? '0.0') ?? 0.0;
+  //           fireStatus = int.tryParse(data['api']?.toString() ?? '0') ?? 0;
+
+  //           if (temperature > 50.0 && previousTemperature <= 50.0) {
+  //             _startTimer();
+  //           } else if (temperature <= 50.0 && previousTemperature > 50.0) {
+  //             _stopTimer();
+  //           }
+  //         });
+  //       }
+  //     },
+  //     onError: (error) {
+  //       print('Error reading data: $error');
+  //     },
+  //   );
+  // }
 
   void _startTimer() {
     print('Timer START - Suhu: $temperature°C');
@@ -120,7 +459,7 @@ class _HomeScreenState extends State<HomeScreen> {
         systemRuntime = DateTime.now().difference(timerStartTime!);
       });
     });
-    
+
     _notificationService.startTimerNotification();
     _isCookingFinished = false; // Reset status selesai ketika mulai memasak
   }
@@ -130,9 +469,9 @@ class _HomeScreenState extends State<HomeScreen> {
     systemTimer?.cancel();
     systemTimer = null;
     timerStartTime = null;
-    
+
     _notificationService.stopTimerNotification();
-    
+
     setState(() {
       systemRuntime = Duration.zero;
     });
@@ -149,7 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
         'duration': systemRuntime.inSeconds,
         'final_temperature': temperature,
         'final_smoke': smoke,
-        'final_viscosity': viscosity,
+        'final_viscosity': viscosity.round(),
         'final_fire_status': fireStatus,
         'final_rpm': currentRpm.toInt(),
         'production_amount': 0,
@@ -165,14 +504,16 @@ class _HomeScreenState extends State<HomeScreen> {
       });
 
       // Update parent dan simpan ke storage
-      await widget.onProductionRecordsUpdated(List.from(widget.productionRecords));
-      
+      await widget.onProductionRecordsUpdated(
+        List.from(widget.productionRecords),
+      );
+
       // Tampilkan dialog konfirmasi
       _showCookingFinishedDialog(cookingRecord);
-      
+
       // Reset timer
       _stopTimer();
-      
+
       print('✅ Selesai Memasak - Data tersimpan permanen');
       print('⏱️ Durasi: ${_formatDuration(systemRuntime)}');
       print('🌡️ Suhu Akhir: ${temperature.toStringAsFixed(1)}°C');
@@ -205,30 +546,51 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('✅ Data sesi memasak telah disimpan', style: TextStyle(fontFamily: 'Poppins')),
+              Text(
+                '✅ Data sesi memasak telah disimpan',
+                style: TextStyle(fontFamily: 'Poppins'),
+              ),
               const SizedBox(height: 12),
-              _buildRecordDetailItem('⏱️ Durasi', _formatDuration(Duration(seconds: record['duration']))),
-              _buildRecordDetailItem('🌡️ Suhu Akhir', '${record['final_temperature'].toStringAsFixed(1)}°C'),
-              _buildRecordDetailItem('💨 Asap Akhir', record['final_smoke'] == 0 ? 'Padam' : 'Terdeteksi'),
-              _buildRecordDetailItem('🧪 Kekentalan', '${record['final_viscosity'].toStringAsFixed(0)}%'),
-              _buildRecordDetailItem('🔥 Status Api', record['final_fire_status'].toString()),
-              _buildRecordDetailItem('⚡ RPM Akhir', '${record['final_rpm']} RPM'),
+              _buildRecordDetailItem(
+                '⏱️ Durasi',
+                _formatDuration(Duration(seconds: record['duration'])),
+              ),
+              _buildRecordDetailItem(
+                '🌡️ Suhu Akhir',
+                '${record['final_temperature'].toStringAsFixed(1)}°C',
+              ),
+              _buildRecordDetailItem(
+                '💨 Asap Akhir',
+                record['final_smoke'] == 0 ? 'Padam' : 'Terdeteksi',
+              ),
+              _buildRecordDetailItem(
+                '🧪 Kekentalan',
+                '${record['final_viscosity'].toStringAsFixed(0).round()}%',
+              ),
+              _buildRecordDetailItem(
+                '🔥 Status Api',
+                record['final_fire_status'].toString(),
+              ),
+              _buildRecordDetailItem(
+                '⚡ RPM Akhir',
+                '${record['final_rpm']} RPM',
+              ),
             ],
           ),
           actions: [
-           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Data tetap tersimpan meski hanya tekan Tutup
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Data sesi memasak telah disimpan'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child: const Text('Tutup'),
-          ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                // Data tetap tersimpan meski hanya tekan Tutup
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Data sesi memasak telah disimpan'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              child: const Text('Tutup'),
+            ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF7E4C27),
@@ -254,9 +616,19 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Expanded(
-            child: Text(label, style: const TextStyle(fontFamily: 'Poppins', fontSize: 12)),
+            child: Text(
+              label,
+              style: const TextStyle(fontFamily: 'Poppins', fontSize: 12),
+            ),
           ),
-          Text(value, style: const TextStyle(fontFamily: 'Poppins', fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -296,8 +668,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildNotificationStatus() {
     final isTimerActive = temperature > 50.0;
-    final isSystemNotificationActive = _notificationService.isNotificationActive;
-    
+    final isSystemNotificationActive =
+        _notificationService.isNotificationActive;
+
     Color statusColor;
     IconData statusIcon;
     String statusText;
@@ -309,7 +682,8 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (isTimerActive && isSystemNotificationActive) {
       statusColor = Colors.orange;
       statusIcon = Icons.timer;
-      statusText = 'Memasak... (${_formatDuration(_notificationService.currentDuration)})';
+      statusText =
+          'Memasak... (${_formatDuration(_notificationService.currentDuration)})';
     } else if (isTimerActive) {
       statusColor = Colors.orange;
       statusIcon = Icons.timer;
@@ -379,104 +753,108 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-Widget _buildFinishCookingButton() {
-  final isTimerActive = temperature > 50.0;
-  final bool isEnabled = isTimerActive && !_isCookingFinished;
-  
-  return Container(
-    width: double.infinity,
-    margin: const EdgeInsets.symmetric(vertical: 8),
-    child: ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: _isCookingFinished 
-            ? Colors.green 
-            : (isEnabled ? const Color(0xFFDC8542) : Colors.grey),
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        elevation: isEnabled ? 8 : 2,
-        shadowColor: isEnabled ? const Color(0xFFDC8542).withOpacity(0.3) : Colors.transparent,
-      ),
-      onPressed: isEnabled ? _finishCooking : () {
-        // Jika disabled, tampilkan snackbar informasi
-        if (!isTimerActive) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Belum ada sesi memasak yang aktif'),
-              backgroundColor: Colors.orange,
-            ),
-          );
+  Widget _buildFinishCookingButton() {
+    final isTimerActive = temperature > 50.0;
+    final bool isEnabled = isTimerActive && !_isCookingFinished;
 
-        } else if (_isCookingFinished) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Sesi memasak sudah selesai'),
-              backgroundColor: Colors.green,
-            ),
-          );
-
-        _isCookingFinished = false;
-        }
-      },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Icon status (opsional, bisa dihapus jika tidak mau icon sama sekali)
-          if (isTimerActive)
-            Icon(
-              _isCookingFinished ? Icons.check_circle : Icons.local_fire_department,
-              size: 32,
-              color: Colors.white.withOpacity(0.8),
-            ),
-          
-          const SizedBox(height: 8),
-          
-          // Title
-          Text(
-            'Proses Memasak\n Belum Dimulai',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              fontFamily: 'Poppins',
-              color: Colors.white,
-            ),
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _isCookingFinished
+              ? Colors.green
+              : (isEnabled ? const Color(0xFFDC8542) : Colors.grey),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-          
-          const SizedBox(height: 4),
-          
-          // Button text
-          // Text(
-          //   _isCookingFinished 
-          //       ? 'SELESAI' 
-          //       : (isTimerActive ? 'SELESAI MEMASAK' : 'Belum Aktif'),
-          //   style: TextStyle(
-          //     fontSize: 14,
-          //     fontWeight: FontWeight.bold,
-          //     fontFamily: 'Poppins',
-          //     color: Colors.white,
-          //     letterSpacing: 1.2,
-          //   ),
-          // ),
-          
-          if (isTimerActive && !_isCookingFinished) ...[
-            const SizedBox(height: 6),
+          elevation: isEnabled ? 8 : 2,
+          shadowColor: isEnabled
+              ? const Color(0xFFDC8542).withOpacity(0.3)
+              : Colors.transparent,
+        ),
+        onPressed: isEnabled
+            ? _finishCooking
+            : () {
+                // Jika disabled, tampilkan snackbar informasi
+                if (!isTimerActive) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Belum ada sesi memasak yang aktif'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                } else if (_isCookingFinished) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Sesi memasak sudah selesai'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+
+                  _isCookingFinished = false;
+                }
+              },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icon status (opsional, bisa dihapus jika tidak mau icon sama sekali)
+            if (isTimerActive)
+              Icon(
+                _isCookingFinished
+                    ? Icons.check_circle
+                    : Icons.local_fire_department,
+                size: 32,
+                color: Colors.white.withOpacity(0.8),
+              ),
+
+            const SizedBox(height: 8),
+
+            // Title
             Text(
-              'Tap untuk menyelesaikan sesi',
+              'Proses Memasak\n Belum Dimulai',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
                 fontFamily: 'Poppins',
-                color: Colors.white.withOpacity(0.9),
-                fontWeight: FontWeight.bold
+                color: Colors.white,
               ),
             ),
+
+            const SizedBox(height: 4),
+
+            // Button text
+            // Text(
+            //   _isCookingFinished
+            //       ? 'SELESAI'
+            //       : (isTimerActive ? 'SELESAI MEMASAK' : 'Belum Aktif'),
+            //   style: TextStyle(
+            //     fontSize: 14,
+            //     fontWeight: FontWeight.bold,
+            //     fontFamily: 'Poppins',
+            //     color: Colors.white,
+            //     letterSpacing: 1.2,
+            //   ),
+            // ),
+            if (isTimerActive && !_isCookingFinished) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Tap untuk menyelesaikan sesi',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'Poppins',
+                  color: Colors.white.withOpacity(0.9),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   String _getSmokeStatusText() {
     return smoke == 0 ? "Padam" : "Terdeteksi";
@@ -486,7 +864,7 @@ Widget _buildFinishCookingButton() {
     FirebaseDatabase.instanceFor(
           app: Firebase.app(),
           databaseURL:
-          'https://sipakarena-default-rtdb.asia-southeast1.firebasedatabase.app',
+              'https://sipakarena-default-rtdb.asia-southeast1.firebasedatabase.app',
         )
         .ref()
         .child(path)
@@ -560,9 +938,9 @@ Widget _buildFinishCookingButton() {
                   final amount = int.tryParse(amountController.text) ?? 0;
                   if (amount > 0) {
                     final newRecord = {
-                      'amount': amount, 
+                      'amount': amount,
                       'date': now,
-                      'type': 'production'
+                      'type': 'production',
                     };
 
                     setState(() {
@@ -573,14 +951,14 @@ Widget _buildFinishCookingButton() {
                         ),
                       );
                     });
-                    
+
                     // Update parent dan simpan ke storage
                     await widget.onProductionRecordsUpdated(
                       List.from(widget.productionRecords),
                     );
-                    
+
                     Navigator.pop(context);
-                    
+
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('$amount ikat berhasil ditambahkan'),
@@ -613,10 +991,12 @@ Widget _buildFinishCookingButton() {
     setState(() {
       widget.productionRecords.removeAt(index);
     });
-    
+
     // Update parent dan simpan ke storage
-    await widget.onProductionRecordsUpdated(List.from(widget.productionRecords));
-    
+    await widget.onProductionRecordsUpdated(
+      List.from(widget.productionRecords),
+    );
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Data produksi dihapus'),
@@ -628,7 +1008,7 @@ Widget _buildFinishCookingButton() {
   @override
   Widget build(BuildContext context) {
     final isTimerActive = temperature > 50.0;
-    
+
     return Padding(
       padding: const EdgeInsets.only(top: 24.0),
       child: Padding(
@@ -645,22 +1025,20 @@ Widget _buildFinishCookingButton() {
                   Column(
                     children: [
                       Text(
-                        isTimerActive ? _formatDuration(systemRuntime) : 'SIPAKARENA',
+                        'SIPAKARENA',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w800,
-                          color: isTimerActive ? const Color.fromRGBO(104, 200, 107, 1) : Colors.white,
+                          color: Colors.white,
                           fontFamily: 'Poppins',
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        isTimerActive
-                            ? 'Memasak...'
-                            : DateFormat('EEEE, dd MMMM yyyy').format(DateTime.now()),
+                        DateFormat('EEEE, dd MMMM yyyy').format(DateTime.now()),
                         style: TextStyle(
                           fontSize: 16,
-                          color: isTimerActive ? const Color.fromRGBO(104, 200, 107, 1) : Colors.white,
+                          color: Colors.white,
                           fontFamily: 'Poppins',
                         ),
                       ),
@@ -673,9 +1051,8 @@ Widget _buildFinishCookingButton() {
                   ),
                 ],
               ),
-              
+
               // _buildNotificationStatus(),
-              
               const SizedBox(height: 20),
 
               // Sensor Cards
@@ -691,84 +1068,115 @@ Widget _buildFinishCookingButton() {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: InfoCard(
-                      icon: "assets/jam_flask.png",
-                      title: 'Kekentalan',
-                      value: '${viscosity.toStringAsFixed(0)}%',
-                      iconSize: 32,
-                      fontSize: 24,
+                    child: GestureDetector(
+                      onTap: () => _showHistoryPopup('Blower'),
+                      child: InfoCard(
+                        icon: "assets/ExhaustFan.png",
+                        title: 'Blower',
+                        value: '${fuzzyBlower.toStringAsFixed(0)}%',
+                        iconSize: 45,
+                        fontSize: 18,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: InfoCard(
+                      icon: 'assets/water.png',
+                      title: 'Kadar Air',
+                      value: '${viscosity.toStringAsFixed(0)}%',
+                      fontSize: 18, // 20
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _showHistoryPopup('Pengaduk'),
+                      child: InfoCard(
+                        icon: "assets/Propeller.png",
+                        title: 'Pengaduk',
+                        value: '${fuzzyPengaduk.toStringAsFixed(0)}%',
+                        iconSize: 45,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              // const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
                     child: InfoCard(
                       icon: 'assets/asap.png',
                       title: 'Asap',
-                      value: _getSmokeStatusText(),
-                      fontSize: 13, // 13
+                      value: '${smoke.toString()}',
+                      fontSize: 18, // 13
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: InfoCard(
-                      icon: "assets/bi_fire.png",
-                      title: 'Api',
-                      value: fireStatus.toString(),
-                      iconSize: 51,
-                      fontSize: 24,
+                    child: GestureDetector(
+                      onTap: () => _showHistoryPopup('Exhaust'),
+                      child: InfoCard(
+                        icon: "assets/ExhaustFann.png",
+                        title: 'Exhaust',
+                        value: '${fuzzyExhaust.toStringAsFixed(0)}%',
+                        iconSize: 41,
+                        fontSize: 18,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              // const SizedBox(height: 16),
 
               // Speed Control
-              SpeedControlCard(
-                onRpmChanged: _updateRpmValue,
-                initialRpm: currentRpm,
-              ),
-              const SizedBox(height: 16),
+              // SpeedControlCard(
+              //   onRpmChanged: _updateRpmValue,
+              //   initialRpm: currentRpm,
+              // ),
+              // const SizedBox(height: 16),
 
               // Action Cards - termasuk tombol Selesai Memasak
-              Row(
-                children: [
-                  Expanded(
-                    child: ActionCard(
-                      title: 'Gerbang\nKayu',
-                      icon: "assets/gate.png",
-                      buttonText: isKayuTerbuka ? "Tutup" : "Buka",
-                      buttonColor: isKayuTerbuka
-                          ? const Color(0xFFDC8542)
-                          : const Color(0xFFFDF7EF),
-                      textColor: isKayuTerbuka
-                          ? Colors.white
-                          : const Color(0xFFDC8542),
-                      onPressed: _toggleKayu,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ActionCard(
-                      title: 'Oli',
-                      icon: "assets/oli.png",
-                      buttonText: isOliDituang ? "Naik" : "Tuang",
-                      buttonColor: isOliDituang
-                          ? const Color(0xFFFDF7EF)
-                          : const Color(0xFFDC8542),
-                      textColor: isOliDituang
-                          ? const Color(0xFFDC8542)
-                          : Colors.white,
-                      onPressed: _toggleOli,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildFinishCookingButton(),
+              // Row(
+              //   children: [
+              //     Expanded(
+              //       child: ActionCard(
+              //         title: 'Gerbang\nKayu',
+              //         icon: "assets/gate.png",
+              //         buttonText: isKayuTerbuka ? "Tutup" : "Buka",
+              //         buttonColor: isKayuTerbuka
+              //             ? const Color(0xFFDC8542)
+              //             : const Color(0xFFFDF7EF),
+              //         textColor: isKayuTerbuka
+              //             ? Colors.white
+              //             : const Color(0xFFDC8542),
+              //         onPressed: _toggleKayu,
+              //       ),
+              //     ),
+              //     const SizedBox(width: 16),
+              //     Expanded(
+              //       child: ActionCard(
+              //         title: 'Oli',
+              //         icon: "assets/oli.png",
+              //         buttonText: isOliDituang ? "Naik" : "Tuang",
+              //         buttonColor: isOliDituang
+              //             ? const Color(0xFFFDF7EF)
+              //             : const Color(0xFFDC8542),
+              //         textColor: isOliDituang
+              //             ? const Color(0xFFDC8542)
+              //             : Colors.white,
+              //         onPressed: _toggleOli,
+              //       ),
+              //     ),
+              //   ],
+              // ),
+              // const SizedBox(height: 16),
+              // _buildFinishCookingButton(),
               // const SizedBox(height: 16),
 
               // Production Card
@@ -823,7 +1231,7 @@ Widget _buildFinishCookingButton() {
                       Container(
                         constraints: const BoxConstraints(
                           minHeight: 100,
-                          maxHeight: 120,
+                          maxHeight: 250,
                         ),
                         width: double.infinity,
                         decoration: BoxDecoration(
@@ -844,14 +1252,15 @@ Widget _buildFinishCookingButton() {
                                 shrinkWrap: true,
                                 itemCount: widget.productionRecords.length,
                                 itemBuilder: (context, index) {
-                                  final record = widget.productionRecords[index];
+                                  final record =
+                                      widget.productionRecords[index];
                                   final date = record['date'] as DateTime;
-                                  
+
                                   // Tampilkan hanya data produksi (bukan cooking session)
                                   if (record['type'] == 'cooking_session') {
                                     return const SizedBox.shrink();
                                   }
-                                  
+
                                   return Dismissible(
                                     key: Key('$index-${record['date']}'),
                                     direction: DismissDirection.endToStart,

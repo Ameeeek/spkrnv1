@@ -1,4 +1,4 @@
-package com.example.sipakarena
+package com.company.sipakarenaFuzzy
 
 import io.flutter.embedding.android.FlutterActivity
 

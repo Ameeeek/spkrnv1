@@ -72,6 +72,10 @@ flutter:
     - assets/suhu.png
     - assets/asap.png
     - assets/sipakarena.png
+    - assets/water.png
+    - assets/Propeller.png
+    - assets/ExhaustFan.png
+    - assets/ExhaustFann.png
 
   #   - images/a_dot_ham.jpeg
 
