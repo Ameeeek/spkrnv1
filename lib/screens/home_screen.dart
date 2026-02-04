@@ -27,6 +27,155 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  // Fungsi untuk mendapatkan data fuzzy sekali (manual pull)
+Future<Map<String, dynamic>?> _getFuzzyDataFromFirebase() async {
+  try {
+    final database = FirebaseDatabase.instanceFor(
+      app: Firebase.app(),
+      databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+    );
+    
+    final ref = database.ref('fuzzy_results');
+    final snapshot = await ref.get();
+    
+    if (snapshot.exists) {
+      final data = snapshot.value as Map<dynamic, dynamic>;
+      print('✅ Data fuzzy berhasil diambil dari Firebase: $data');
+      
+      // Update UI dengan data dari Firebase
+      _updateFuzzyDataFromFirebase(data);
+      
+      return {
+        'success': true,
+        'data': data,
+        'message': 'Data fuzzy berhasil diambil',
+      };
+    } else {
+      print('⚠️ Tidak ada data fuzzy di Firebase');
+      return {
+        'success': false,
+        'message': 'Tidak ada data fuzzy di Firebase',
+      };
+    }
+  } catch (e) {
+    print('❌ Error mengambil data fuzzy dari Firebase: $e');
+    return {
+      'success': false,
+      'error': e.toString(),
+      'message': 'Gagal mengambil data fuzzy',
+    };
+  }
+}
+
+// Fungsi untuk mendapatkan data fuzzy terbaru
+Future<void> _getLatestFuzzyData() async {
+  final result = await _getFuzzyDataFromFirebase();
+  
+  if (mounted && result != null && result['success'] == true) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message'] as String),
+        backgroundColor: Colors.green,
+      ),
+    );
+  } else if (mounted && result != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message'] as String),
+        backgroundColor: Colors.orange,
+      ),
+    );
+  }
+}
+  void _sendFuzzyDataToFirebase(Map<String, double> fuzzyResults) async {
+  try {
+    final database = FirebaseDatabase.instanceFor(
+      app: Firebase.app(),
+      databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+    );
+    
+    final ref = database.ref('batch_1/fuzzy_output');
+    
+    // Data yang akan dikirim
+    final dataToSend = {
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'blower': fuzzyResults['Blower'] ?? 0.0,
+      'pengaduk': fuzzyResults['Pengaduk'] ?? 0.0,
+      'exhaust': fuzzyResults['Exhaust'] ?? 0.0,
+      'suhu': temperature,
+      'kadar_air': viscosity,
+      'asap': smoke.toDouble(),
+    };
+    
+    // Kirim data ke Firebase
+    await ref.set(dataToSend);
+    
+    print('✅ Data fuzzy berhasil dikirim ke Firebase: $dataToSend');
+  } catch (e) {
+    print('❌ Error mengirim data fuzzy ke Firebase: $e');
+  }
+}
+
+// Fungsi untuk mengirim data ke path tertentu (update atau create)
+void _updateOrCreateFuzzyData(Map<String, double> fuzzyResults) async {
+  try {
+    final database = FirebaseDatabase.instanceFor(
+      app: Firebase.app(),
+      databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+    );
+    
+    // Buat data yang terstruktur
+    final Map<String, dynamic> fuzzyData = {
+      'last_updated': DateTime.now().toIso8601String(),
+      'output': {
+        'blower': fuzzyResults['Blower']?.round() ?? 0,
+        'pengaduk': fuzzyResults['Pengaduk']?.round() ?? 0,
+        'exhaust': fuzzyResults['Exhaust']?.round() ?? 0,
+      },
+      'input': {
+        'suhu': temperature,
+        'kadar_air': viscosity,
+        'asap': smoke,
+      }
+    };
+    
+    // Update data di path 'fuzzy_results'
+    await database.ref('fuzzy_results').set(fuzzyData);
+    
+    print('✅ Data fuzzy diperbarui di Firebase');
+  } catch (e) {
+    print('❌ Error memperbarui data fuzzy: $e');
+  }
+}
+
+// Fungsi untuk menyimpan histori fuzzy
+void _saveFuzzyHistory(Map<String, double> fuzzyResults) async {
+  try {
+    final database = FirebaseDatabase.instanceFor(
+      app: Firebase.app(),
+      databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+    );
+    
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final historyRef = database.ref('fuzzy_history/$timestamp');
+    
+    final historyData = {
+      'timestamp': timestamp,
+      'time': DateTime.now().toIso8601String(),
+      'blower': fuzzyResults['Blower']?.round() ?? 0,
+      'pengaduk': fuzzyResults['Pengaduk']?.round() ?? 0,
+      'exhaust': fuzzyResults['Exhaust']?.round() ?? 0,
+      'suhu': temperature,
+      'kadar_air': viscosity.round(),
+      'asap': smoke,
+    };
+    
+    await historyRef.set(historyData);
+    print('📝 Histori fuzzy disimpan ke Firebase');
+  } catch (e) {
+    print('❌ Error menyimpan histori fuzzy: $e');
+  }
+}
   void _showHistoryPopup(String actuatorName) {
     showDialog(
       context: context,
@@ -193,6 +342,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // Variabel Penyimpan Histori
   List<Map<dynamic, dynamic>> historicalData = [];
   late DatabaseReference _sensorRef;
+    late DatabaseReference _fuzzyRef; // Tambahkan ini untuk fuzzy data
+  late DatabaseReference _fuzzyHistoryRef; // Untuk histori fuzzy
   int fireStatus = 0;
   // late DatabaseReference _sensorRef;
 
@@ -218,7 +369,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _initializeApp();
+      _getInitialFuzzyData();
   }
+  Future<void> _getInitialFuzzyData() async {
+  // Tunggu sebentar untuk memastikan Firebase terinisialisasi
+  await Future.delayed(const Duration(seconds: 1));
+  
+  // Ambil data fuzzy terbaru dari Firebase
+  await _getFuzzyDataFromFirebase();
+  
+  // Atau Anda bisa langsung setup listener yang akan otomatis update
+  print('🎯 Mendengarkan data fuzzy dari Firebase...');
+}
 
   Future<void> _initializeApp() async {
     await _notificationService.initialize();
@@ -246,49 +408,114 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // List<Map<dynamic, dynamic>> historicalData = []; // Simpan data histori di sini
 
-  void _setupFirebaseListener() {
-    _sensorRef = FirebaseDatabase.instanceFor(
-      app: Firebase.app(),
-      databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
-    ).ref('batch_1/data'); // Mengambil folder 'data'
-
-    _sensorRef.onValue.listen((DatabaseEvent event) {
-      final data = event.snapshot.value;
-
-      if (data is List) {
-        setState(() {
-          // 1. Simpan semua data untuk histori (0-20)
-          historicalData = data.whereType<Map<dynamic, dynamic>>().toList();
-
-          // 2. Update tampilan real-time menggunakan data indeks ke-20
-          if (data.length > 20) {
-            final data20 = data[20];
-            temperature =
-                double.tryParse(data20['suhu']?.toString() ?? '0.0') ?? 0.0;
-            viscosity =
-                double.tryParse(data20['kadar_air']?.toString() ?? '0.0') ??
-                0.0;
-            smoke = int.tryParse(data20['asap']?.toString() ?? '0') ?? 0;
-
-            // Hitung fuzzy untuk tampilan utama
-            _calculateFuzzyLogic(temperature, viscosity, smoke.toDouble());
-          }
-        });
+// Fungsi untuk update UI dengan data fuzzy dari Firebase
+void _updateFuzzyDataFromFirebase(Map<dynamic, dynamic> data) {
+  try {
+    setState(() {
+      // Format 1: Data terstruktur dengan 'output' object
+      if (data['output'] != null && data['output'] is Map) {
+        final output = data['output'] as Map<dynamic, dynamic>;
+        fuzzyBlower = (output['blower'] as int?) ?? fuzzyBlower;
+        fuzzyPengaduk = (output['pengaduk'] as int?) ?? fuzzyPengaduk;
+        fuzzyExhaust = (output['exhaust'] as int?) ?? fuzzyExhaust;
+      } 
+      // Format 2: Data flat langsung
+      else if (data['blower'] != null) {
+        fuzzyBlower = (data['blower'] as int?) ?? fuzzyBlower;
+        fuzzyPengaduk = (data['pengaduk'] as int?) ?? fuzzyPengaduk;
+        fuzzyExhaust = (data['exhaust'] as int?) ?? fuzzyExhaust;
+      }
+      
+      // Update timestamp jika ada
+      if (data['last_updated'] != null) {
+        print('🔄 Data fuzzy diperbarui: ${data['last_updated']}');
       }
     });
+  } catch (e) {
+    print('❌ Error memproses data fuzzy dari Firebase: $e');
   }
+}
+  void _setupFirebaseListener() {
+  // 1. Setup listener untuk data sensor (sudah ada)
+  _sensorRef = FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+  ).ref('batch_1/data');
+  
+  _sensorRef.onValue.listen((DatabaseEvent event) {
+    final data = event.snapshot.value;
+    
+    if (data is List) {
+      setState(() {
+        historicalData = data.whereType<Map<dynamic, dynamic>>().toList();
+        
+        if (data.length > 20) {
+          final data20 = data[20];
+          temperature = 
+              double.tryParse(data20['suhu']?.toString() ?? '0.0') ?? 0.0;
+          viscosity = 
+              double.tryParse(data20['kadar_air']?.toString() ?? '0.0') ?? 0.0;
+          smoke = int.tryParse(data20['asap']?.toString() ?? '0') ?? 0;
+          
+          // Hitung fuzzy untuk tampilan utama
+          _calculateFuzzyLogic(temperature, viscosity, smoke.toDouble());
+        }
+      });
+    }
+  });
+  
+  // 2. Setup listener untuk data fuzzy (TAMBAHKAN INI)
+  _fuzzyRef = FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+  ).ref('fuzzy_results'); // atau 'batch_1/fuzzy_output' sesuai kebutuhan
+  
+  _fuzzyRef.onValue.listen((DatabaseEvent event) {
+    final data = event.snapshot.value;
+    
+    if (data != null && data is Map) {
+      print('📥 Data fuzzy diterima dari Firebase: $data');
+      
+      // Update UI dengan data dari Firebase
+      _updateFuzzyDataFromFirebase(data);
+    }
+  });
+  
+  // 3. Setup listener untuk histori fuzzy (opsional)
+  _fuzzyHistoryRef = FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: 'https://sipakarena-logic-default-rtdb.firebaseio.com/',
+  ).ref('fuzzy_history');
+  
+  _fuzzyHistoryRef.limitToLast(10).onValue.listen((DatabaseEvent event) {
+    final data = event.snapshot.value;
+    
+    if (data != null && data is Map) {
+      print('📚 ${data.length} entri histori fuzzy diterima');
+      // Anda bisa menyimpan histori ini jika diperlukan
+    }
+  });
+}
   // --- FUNGSI LOGIKA FUZZY LENGKAP ---
 
   // --- FUNGSI UTAMA UNTUK UPDATE UI ---
   void _calculateFuzzyLogic(double s, double k, double a) {
-    final hasil = _getSingleFuzzyResult(s, k, a);
-    setState(() {
-      fuzzyBlower = hasil['Blower']!.round();
-      fuzzyPengaduk = hasil['Pengaduk']!.round();
-      fuzzyExhaust = hasil['Exhaust']!.round();
-    });
-    print("Realtime Fuzzy Update -> B: ${fuzzyBlower.toStringAsFixed(1)}%");
-  }
+  final hasil = _getSingleFuzzyResult(s, k, a);
+  
+  setState(() {
+    fuzzyBlower = hasil['Blower']!.round();
+    fuzzyPengaduk = hasil['Pengaduk']!.round();
+    fuzzyExhaust = hasil['Exhaust']!.round();
+  });
+  
+  // Kirim data fuzzy ke Firebase
+  _updateOrCreateFuzzyData(hasil);
+  
+  // Simpan ke histori (opsional)
+  _saveFuzzyHistory(hasil);
+  
+  print("Realtime Fuzzy Update -> B: ${fuzzyBlower.toStringAsFixed(1)}%");
+}
 
   // --- FUNGSI MESIN FUZZY (DAPAT DIGUNAKAN HISTORI & REALTIME) ---
   Map<String, double> _getSingleFuzzyResult(double s, double k, double a) {
